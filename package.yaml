@@ -1,0 +1,29 @@
+name:                chronon
+version:             0.1.0.0
+
+dependencies:
+- base >= 4.7 && < 5
+- parsec
+- containers
+- mtl
+
+library:
+  source-dirs: lib
+  when:
+  - condition: false
+    other-modules: Paths_chronon
+
+executables:
+  chronon:
+    main:                App.hs
+    source-dirs:         app
+    dependencies:
+    - chronon
+
+tests:
+ spec:
+    main: Spec.hs
+    source-dirs: test
+    dependencies:
+    - hspec
+    - chronon
