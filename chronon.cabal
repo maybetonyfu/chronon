@@ -1,0 +1,61 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 66a49b7efa3213e5067f92e4d6c6b5145dbc6d1e28cd54f1e9d5062043dd1868
+
+name:           chronon
+version:        0.1.0.0
+build-type:     Simple
+
+library
+  exposed-modules:
+      Chronon
+      Unify
+  hs-source-dirs:
+      lib
+  build-depends:
+      base >=4.7 && <5
+    , containers
+    , hspec
+    , mtl
+    , parsec
+  if false
+    other-modules:
+        Paths_chronon
+  default-language: Haskell2010
+
+executable chronon
+  main-is: App.hs
+  other-modules:
+      Paths_chronon
+  hs-source-dirs:
+      app
+  build-depends:
+      base >=4.7 && <5
+    , chronon
+    , containers
+    , hspec
+    , mtl
+    , parsec
+  default-language: Haskell2010
+
+test-suite spec
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      ChrononSpec
+      UnifySpec
+      Paths_chronon
+  hs-source-dirs:
+      test
+  build-depends:
+      base >=4.7 && <5
+    , chronon
+    , containers
+    , hspec
+    , mtl
+    , parsec
+  default-language: Haskell2010
