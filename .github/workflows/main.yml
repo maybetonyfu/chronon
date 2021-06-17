@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: haskell/actions/setup@v1
       - name: Build project
-        run: cabal v2-build --enable-tests
+        run: cabal v2-build
       - name: Run tests
         run: cabal v2-test all --test-show-details=direct
         env:
