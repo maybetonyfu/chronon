@@ -1,9 +1,11 @@
+{-# LANGUAGE TupleSections #-}
 module ChrononSpec where
 
 import Data.Either
-import Test.Hspec ( shouldSatisfy, it, describe, Spec )
+import Test.Hspec
 import Chronon
 import Unify
+import Control.Monad.State.Lazy
 
 lt :: Int -> Int -> Term
 lt a b = app "lt" [var a, var b]
@@ -29,18 +31,22 @@ spec = do
         let rule = emptySimpRule [lt 1 2, lt 2 3]
         let cons = [lt 4 5, lt 6 7]
         match rule cons `shouldSatisfy` not . isMatch
-  describe "Evaluating" $ do
+
+  describe "Evaluating (Small step)" $ do
     it "should eval lt(a,b),lt(b, c) <=> lt(a,c)" $ do
       let rule = propRule [lt 1 2, lt 2 3] [lt 1 3]
       let cons = [lt 10 11, lt 11 12]
-      evalSmallStep [rule] cons `shouldSatisfy` (==3) . length
-      
+      let program = Program (map (, CS Ready Inactive) cons)
+      evalState (evalSmallStep [rule]) program  `shouldBe` Success 
+
     it "should eval lt(a,b),lt(b, a) ==> []" $ do
       let rule = simpRule [lt 1 2, lt 2 1] []
       let cons = [lt 10 11, lt 11 10]
-      evalSmallStep [rule] cons `shouldSatisfy` null
-
+      let program = Program (map (, CS Ready Inactive) cons)
+      evalState (evalSmallStep [rule]) program  `shouldBe` Success 
+      
     it "should eval lt(a,b),lt(b, a) ==> [] (in reverse order)" $ do
       let rule = simpRule [lt 1 2, lt 2 1] []
       let cons = [lt 11 10, lt 10 11]
-      evalSmallStep [rule] cons `shouldSatisfy` null
+      let program = Program (map (, CS Ready Inactive) cons)
+      evalState (evalSmallStep [rule]) program  `shouldBe` Success

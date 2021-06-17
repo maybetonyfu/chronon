@@ -6,6 +6,8 @@ dependencies:
 - parsec
 - containers
 - mtl
+- hspec
+
 
 library:
   source-dirs: lib
