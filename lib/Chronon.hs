@@ -13,12 +13,16 @@ author = "Tony"
 data Rule
   = SimpRule Head Body
   | PropRule Head Body
-  deriving (Show)
+  deriving (Show, Eq)
 
-newtype Head = Head [Term] deriving (Show)
-newtype Body = Body [Term] deriving (Show)
+newtype Head = Head [Term] deriving (Show, Eq)
+newtype Body = Body [Term] deriving (Show, Eq)
 
 data Program = Program [(Term, Bool)] deriving Show
+data EliminateState = Marked | Deleted
+data IntroduceState = Planned 
+data RuleState = Active Rule | Inactive
+
 
 getRuleHeads :: Rule -> [Term]
 getRuleHeads (SimpRule (Head heads) _) = heads
