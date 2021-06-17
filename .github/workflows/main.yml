@@ -15,15 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - uses: haskell/actions/setup@v1
-      - name: Build project
-        run: cabal v2-build
-      - name: Run tests
-        run: cabal v2-test all --test-show-details=direct
-        env:
-          HSPEC_OPTIONS: --color
+        with:
+          enable-stack: true
+      - name: Run Test
+        run: stack test
+
   success:
-    needs:
-      - build
+    needs: [build]
     runs-on: ubuntu-latest
-    steps:
-      - run: echo success
+    steps: [run: echo success]
