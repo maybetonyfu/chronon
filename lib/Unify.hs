@@ -106,7 +106,7 @@ skolemise (TVar x) subs =
     (Just (Aliased aliases)) -> Right $ foldr (\a s -> insert a (Skolemised x) s) subs aliases
     (Just (BoundCon _)) -> Left Mismatch
     (Just (BoundApp _)) -> Left Mismatch
-    (Just (Skolemised y)) -> if x == y then Right subs else Left Mismatch
+    (Just (Skolemised y)) -> Right subs -- Should this be like this?
 skolemise _ _ = Left Mismatch
 
 
