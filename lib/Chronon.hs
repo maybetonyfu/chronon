@@ -2,13 +2,13 @@
 
 module Chronon where
 
-import Control.Monad.State.Lazy
+import Control.Monad.Trans.State.Lazy
 import Data.Either
 import Data.List hiding (delete)
 import Data.Maybe
 import Debug.Trace
 import Unify
-
+import Control.Applicative.Lift
 author :: [Char]
 author = "Tony"
 
@@ -69,7 +69,7 @@ data Answer = FailNoRuleApply | Succeed deriving (Show, Eq)
 
 type CHRState = StateT ([Rule], Program, History, Sub)
 
-add :: MonadIO m => [Term] -> CHRState m ()
+add :: Monad m => [Term] -> CHRState m ()
 add [] = return ()
 add (t : ts) = do
   (r, Program ps, h, u) <- get
@@ -82,13 +82,10 @@ add (t : ts) = do
     TApp "=" (x : y : _) ->
       case unify x y u of
         Right u' -> do 
-          liftIO $ print "Unification success"
           put (r, newProgram, h, u') >> add ts
         Left _ -> do 
-          liftIO $ print "Unification Failed"
           put (r, newProgram, h, u)>> add ts
     _ -> do 
-      liftIO $ print "Unification not found"
       put (r, newProgram, h, u) >> add ts
 
 delete :: Monad m => [Term] -> CHRState m ()
@@ -103,14 +100,14 @@ deactivate ts = do
   let newProgram = Program (map (\(t, s) -> if t `elem` ts then (t, Passive) else (t, s)) ps)
   put (r, newProgram, h, u)
 
-commit :: MonadIO m => Step -> CHRState m ()
+commit :: Monad m => Step -> CHRState m ()
 commit step = do
   add (toAdd step)
   delete (toDelete step)
   deactivate (toDeactivate step)
   modify (\(r, p, History h, u) -> (r, p, History (step : h), u))
 
-eval :: MonadIO m => CHRState m Answer
+eval :: CHRState IO Answer
 eval = do
   (_, Program ps, _, u) <- get
   if null ps 
@@ -118,30 +115,15 @@ eval = do
     else do 
       matched <- headMatching
       case matched of
-        NoMatch -> liftIO $ print "No match" >> return FailNoRuleApply
+        NoMatch -> return FailNoRuleApply
         step -> do
-          liftIO $ putStrLn $ "Matched rule: " ++ (ruleName . matchedRule $ step)
-          liftIO $ putStrLn "Matched constraints:"
-          liftIO $ print (matcedConstraints step)
-          liftIO $ putStrLn "Added:"
-          liftIO $ print (toAdd step)
-          liftIO $ putStrLn "Deleted:"
-          liftIO $ print (toDelete step)
-          liftIO $ putStrLn "Put to sleep:"
-          liftIO $ print (toDeactivate step)
           commit step
           eval
 
-headMatching :: MonadIO m => CHRState m Step
+headMatching :: Monad m => CHRState m Step
 headMatching = do
   (rules, Program ps, _, u) <- get
   let currentConstraint = find ((== Active) . snd) ps
-  liftIO $ putStrLn "\n\n-----------------------"
-  liftIO $ putStrLn ("Current Evaluating: " ++ show currentConstraint)
-  liftIO $ putStrLn "Program:  "
-  liftIO $ mapM_ print ps
-  liftIO $ putStrLn "Unifier:"
-  liftIO $ mapM_ print u
   let restOfConstraints = filter
   case currentConstraint of
     Just (term, status) -> do
