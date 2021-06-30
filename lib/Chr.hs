@@ -52,12 +52,12 @@ getRuleBody (SimpRule _  _ _ bodies) = bodies
 getRuleBody (PropRule _  _ _ bodies) = bodies
 
 getRuleName :: Rule -> String
-getRuleName (SimpRule _  name _ _) = name
-getRuleName (PropRule _  name _ _) = name
+getRuleName (SimpRule _ name _ _) = name
+getRuleName (PropRule _ name _ _) = name
 
 instance Show Rule where
-  show (SimpRule ruleid  name heads bodies) = "[" ++ show ruleid ++ "(" ++ name ++ ")] " ++ showTerms heads ++ " <=> " ++ showTerms bodies
-  show (PropRule ruleid  name heads bodies) = "[" ++ show ruleid ++ "(" ++ name ++ ")] " ++ showTerms heads ++ " ==> " ++ showTerms bodies
+  show (SimpRule ruleid name heads bodies) = "[" ++ show ruleid ++ "(" ++ name ++ ")] " ++ showTerms heads ++ " <=> " ++ showTerms bodies
+  show (PropRule ruleid name heads bodies) = "[" ++ show ruleid ++ "(" ++ name ++ ")] " ++ showTerms heads ++ " ==> " ++ showTerms bodies
 
 data Target = Aliased IS.IntSet | Bound Term | Skolemised Int deriving (Show, Eq)
 
@@ -105,18 +105,19 @@ freshVar = do
   modify $ over getNextVar (+ 1)
   return v
 
-
-addSimpRule ::  Monad m => String -> Head -> Body -> StateT EvalState m ()
+addSimpRule :: Monad m => String -> Head -> Body -> StateT EvalState m ()
 addSimpRule name head body = do
   es <- get
+  return $ print (view getRules es)
   let numberOfRules = length $ view getRules es
-  modify $ over getRules (SimpRule numberOfRules name head body :)
+  modify $ over getRules ( ++ [ SimpRule numberOfRules name head body ])
 
 addPropRule :: Monad m => String -> Head -> Body -> StateT EvalState m ()
 addPropRule name head body = do
   es <- get
+  return $ print (view getRules es)
   let numberOfRules = length $ view getRules es
-  modify $ over getRules (PropRule numberOfRules name head body :)
+  modify $ over getRules ( ++ [ PropRule numberOfRules name head body ])
 
 substitute :: [(Int, Int)] -> Term -> Term
 substitute unifier (Var n) =
@@ -324,8 +325,6 @@ matchRules (rule : rules) = do
 eval :: Monad m => StateT EvalState m ()
 eval = do
   es <- get
-  return (mapM_ print (view getGoal es))
-
   let goal = view getGoal es
   if null goal
     then do
@@ -366,13 +365,19 @@ main = do
             _getLog = [],
             _getRules =
               [
-                -- SimpRule 0 "antisymitry" [lt 0 0] [],
-                -- SimpRule 1 "reflection"  [lt 0 1, lt 1 0] [eq 1 0],
-                -- PropRule 2 "transitive"  [lt 0 1, lt 1 2] [lt 0 2]
+
               ],
             _getMatchHistory = []
           }
-  let state' = execState (addSimpRule "antisymitry" [lt 0 0] [] >> addSimpRule "reflection"  [lt 0 1, lt 1 0] [eq 1 0] >> addPropRule "transitive"  [lt 0 1, lt 1 2] [lt 0 2] >> eval) state
+  let newState = execState (
+                  addSimpRule "antisymitry" [lt 0 0] [] >>
+                  addSimpRule "reflection"  [lt 0 1, lt 1 0] [eq 1 0] >>
+                  addPropRule "transitive"  [lt 0 1, lt 1 2] [lt 0 2]
+              ) state
+
+  putStrLn "\n----- Rules  -----"
+  mapM_ print (view getRules newState)
+  let state' = execState eval newState
   let log = view getLog state'
   mapM_ putStrLn log
   putStrLn "\n----- Goals  -----"
