@@ -29,7 +29,8 @@ allVars ((Var n) : ts) = let rest = allVars ts in if n `elem` rest then rest els
 allVars ((Fun _ ts') : ts) = allVars (ts' ++ ts)
 
 showTerms :: [Term] -> String
-showTerms = intercalate "," . map show
+showTerms [] = "Empty"
+showTerms ts = intercalate "," . map show $ ts
 
 isBuiltIn :: Term -> Bool
 isBuiltIn (Fun "eq" [x, y]) = True -- Currently only 'Equality' is in Consitraint theory
@@ -66,8 +67,8 @@ getRuleName (SimpRule _ name _ _) = name
 getRuleName (PropRule _ name _ _) = name
 
 instance Show Rule where
-  show (SimpRule ruleid name heads bodies) = "[" ++ show ruleid ++ "(" ++ name ++ ")] " ++ showTerms heads ++ " <=> " ++ showTerms bodies
-  show (PropRule ruleid name heads bodies) = "[" ++ show ruleid ++ "(" ++ name ++ ")] " ++ showTerms heads ++ " ==> " ++ showTerms bodies
+  show (SimpRule ruleid name heads bodies) = show ruleid ++ "." ++ name ++ ":\t" ++ showTerms heads ++ " <=> " ++ showTerms bodies
+  show (PropRule ruleid name heads bodies) = show ruleid ++ "." ++ name ++ ":\t" ++ showTerms heads ++ " ==> " ++ showTerms bodies
 
 data Target = Aliased IS.IntSet | Bound Term | Skolemised Int deriving (Show, Eq)
 
@@ -123,13 +124,13 @@ addSimpRule :: Monad m => String -> Head -> Body -> StateT EvalState m ()
 addSimpRule name head body = do
   es <- get
   let numberOfRules = length $ view getRules es
-  modify $ over getRules (++ [SimpRule numberOfRules name head body])
+  modify $ over getRules (SimpRule numberOfRules name head body :)
 
 addPropRule :: Monad m => String -> Head -> Body -> StateT EvalState m ()
 addPropRule name head body = do
   es <- get
   let numberOfRules = length $ view getRules es
-  modify $ over getRules (++ [PropRule numberOfRules name head body])
+  modify $ over getRules (PropRule numberOfRules name head body :)
 
 substitute :: [(Int, Int)] -> Term -> Term
 substitute unifier (Var n) =
@@ -243,6 +244,7 @@ introduce :: Monad m => Term -> StateT EvalState m ()
 introduce term =
   -- trace ("Introducing " ++ show term) $
   do
+    appendLog $ "Introduce: " ++ show term
     es <- get
     -- It is important that we count every user constraint (INCLUDING the ones that are deleted)
     let nextConstraintId = length (view getUserStore es)
@@ -352,7 +354,7 @@ eval = do
               -- trace ("History: " ++ show history ++ " Cons: " ++ showTerms goal') $
               do
                 let removeMatchingHead = over getUserStore (map (\uc -> if uc `elem` machedConstraints then set getDeleted True uc else uc))
-                modify $ over getGoal (goal' ++) . removeMatchingHead
+                modify $ over getMatchHistory (history :) . over getGoal (goal' ++) . removeMatchingHead
                 mapM_ deactivate machedConstraints
                 eval
             PropRule {} ->
@@ -383,29 +385,29 @@ main = do
             _getUserStore = [],
             _getBuiltInStore = IM.empty,
             _getLog = [],
-            _getRules =
-              [],
+            _getRules = [],
             _getMatchHistory = []
           }
-  let newState =
+
+  let state' =
         execState
-          ( addSimpRule "reflection" [lt 0 1, lt 1 0] [eq 1 0]
+          ( addPropRule "transitive" [lt 0 1, lt 1 2] [lt 0 2]
+              >> addSimpRule "reflection" [lt 0 1, lt 1 0] [eq 1 0]
               >> addSimpRule "antisymitry" [lt 0 0] []
-              >> addPropRule "transitive" [lt 0 1, lt 1 2] [lt 0 2]
+              >> eval
           )
           state
 
-  let state' = execState eval newState
   let log = view getLog state'
 
   mapM_ putStrLn log
-  putStrLn "\n----- Rules  -----"
+  putStrLn "\n----- Rules -----"
   mapM_ print (view getRules state')
-  putStrLn "\n----- Goals  -----"
-  mapM_ print (view getGoal state')
-  putStrLn "\n----- User Store  -----"
+  putStrLn "\n----- Goals -----"
+  putStrLn . showTerms $ view getGoal state'
+  putStrLn "\n----- User Store -----"
   mapM_ print (view getUserStore state')
-  putStrLn "\n----- Built-in Store  -----"
+  putStrLn "\n----- Built-in Store -----"
   mapM_ print (view getBuiltInStore state')
-  putStrLn "\n----- Match history  -----"
+  putStrLn "\n----- Match history -----"
   mapM_ print (view getMatchHistory state')
