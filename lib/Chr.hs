@@ -8,6 +8,7 @@ import Control.Monad.Trans.State.Lazy
 import Data.Bifunctor
 import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
+import qualified Data.Map as Map
 import Data.List
 import Data.Maybe
 import Debug.Trace
@@ -90,6 +91,7 @@ type BuiltInStore = IM.IntMap Target
 
 data EvalState = EvalState
   { _getNextVar :: Int,
+    _symbolMap :: Map.Map String (Int, [String]),
     _getGoal :: Goal,
     _getUserStore :: UserStore,
     _getBuiltInStore :: BuiltInStore,
@@ -113,12 +115,12 @@ data MatchResult
 
 makeLenses ''MatchResult
 
-freshVar :: Monad m => StateT EvalState m Int
-freshVar = do
+freshVar :: Monad m => String -> [String] -> StateT EvalState m Term
+freshVar symbol comments = do
   es <- get
   let v = view getNextVar es
-  modify $ over getNextVar (+ 1)
-  return v
+  modify $ over getNextVar (+ 1) . over symbolMap (Map.insert symbol (v, comments))
+  return (Var v)
 
 addSimpRule :: Monad m => String -> Head -> Body -> StateT EvalState m ()
 addSimpRule name head body = do
@@ -375,6 +377,7 @@ main = do
   let state =
         EvalState
           { _getNextVar = 20,
+            _symbolMap = Map.empty,
             _getGoal =
               [ lt 10 11,
                 lt 11 12,
