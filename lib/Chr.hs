@@ -13,7 +13,9 @@ import Data.Maybe
 import Debug.Trace
 
 type Head = [Term]
+
 type Body = [Term]
+
 data Term = Var Int | Fun String [Term] deriving (Eq)
 
 instance Show Term where
@@ -39,6 +41,14 @@ data Rule
   | PropRule Int String Head Body
   deriving (Eq)
 
+isPropRule :: Rule -> Bool
+isPropRule PropRule {} = True
+isPropRule _ = False
+
+isSimpRule :: Rule -> Bool
+isSimpRule SimpRule {} = True
+isSimpRule _ = False
+
 getRuleId :: Rule -> Int
 getRuleId (SimpRule ruleId _ _ _) = ruleId
 getRuleId (PropRule ruleId _ _ _) = ruleId
@@ -48,8 +58,8 @@ getRuleHead (SimpRule _ _ heads _) = heads
 getRuleHead (PropRule _ _ heads _) = heads
 
 getRuleBody :: Rule -> Body
-getRuleBody (SimpRule _  _ _ bodies) = bodies
-getRuleBody (PropRule _  _ _ bodies) = bodies
+getRuleBody (SimpRule _ _ _ bodies) = bodies
+getRuleBody (PropRule _ _ _ bodies) = bodies
 
 getRuleName :: Rule -> String
 getRuleName (SimpRule _ name _ _) = name
@@ -90,12 +100,16 @@ data EvalState = EvalState
 
 makeLenses ''EvalState
 
-data MatchResult = Unmatch | Matched {
-  _matchedRule :: Rule,
-  _matchedConstraints :: [UserConstraint],
-  _newGoal :: Goal,
-  _history :: [Int]
-} deriving (Eq, Show)
+data MatchResult
+  = Unmatch
+  | Matched
+      { _matchedRule :: Rule,
+        _matchedConstraints :: [UserConstraint],
+        _newGoal :: Goal,
+        _history :: [Int]
+      }
+  deriving (Eq, Show)
+
 makeLenses ''MatchResult
 
 freshVar :: Monad m => StateT EvalState m Int
@@ -108,16 +122,14 @@ freshVar = do
 addSimpRule :: Monad m => String -> Head -> Body -> StateT EvalState m ()
 addSimpRule name head body = do
   es <- get
-  return $ print (view getRules es)
   let numberOfRules = length $ view getRules es
-  modify $ over getRules ( ++ [ SimpRule numberOfRules name head body ])
+  modify $ over getRules (++ [SimpRule numberOfRules name head body])
 
 addPropRule :: Monad m => String -> Head -> Body -> StateT EvalState m ()
 addPropRule name head body = do
   es <- get
-  return $ print (view getRules es)
   let numberOfRules = length $ view getRules es
-  modify $ over getRules ( ++ [ PropRule numberOfRules name head body ])
+  modify $ over getRules (++ [PropRule numberOfRules name head body])
 
 substitute :: [(Int, Int)] -> Term -> Term
 substitute unifier (Var n) =
@@ -212,7 +224,7 @@ skolemise x = do
     Just (Skolemised sk) -> return ()
     Just (Bound _) -> error "Cannot skolemise a fun"
 
-derive :: Monad m => Term ->  StateT EvalState m Term
+derive :: Monad m => Term -> StateT EvalState m Term
 derive (Var x) = do
   x' <- deref x
   case x' of
@@ -224,56 +236,50 @@ derive (Fun name args) = do
   args' <- mapM derive args
   return (Fun name args')
 
--- clone :: Monad m => Rule -> StateT EvalState m Rule
--- clone rule = do
---   let heads = getRuleHead rule
---   let bodies = getRuleBody rule
---   let name = getRuleName rule
---   let vars = allVars (heads ++ bodies)
---   unifier <- mapM (\v -> do v' <- freshVar; return (v, v')) vars
---   return $ SimpRule name (map (substitute unifier) heads) (map (substitute unifier) bodies)
-
 appendLog :: Monad m => String -> StateT EvalState m ()
 appendLog log = modify $ over getLog (++ [log])
 
 introduce :: Monad m => Term -> StateT EvalState m ()
-introduce term = do
-  appendLog $ "Introduce: " ++ show term
-  es <- get
-  let nextConstraintId = length (view getUserStore es) -- It is important that we need every user constraint (INCLUDING the ones that are deleted)
-  modify $ over getGoal (filter (/= term)) . over getUserStore (UserConstraint term False True nextConstraintId :)
+introduce term =
+  -- trace ("Introducing " ++ show term) $
+  do
+    es <- get
+    -- It is important that we count every user constraint (INCLUDING the ones that are deleted)
+    let nextConstraintId = length (view getUserStore es)
+    case find ((== term) . view getTerm) (view getUserStore es) of
+      Nothing -> modify $ over getGoal (filter (/= term)) . over getUserStore ([UserConstraint term False True nextConstraintId] ++)
+      Just t -> modify $ over getGoal (filter (/= term))
 
 solve :: Monad m => Term -> StateT EvalState m ()
 solve t@(Fun _ [x, y]) = do
   appendLog $ "Solve: " ++ show x ++ " = " ++ show y
   unify x y
+  es <- get
+  mapM_ activate (view getUserStore es)
   modify $ over getGoal (filter (/= t))
 solve _ = error "Cannot solve user constraint"
 
--- simplify :: Monad m => [Term] -> Rule -> StateT EvalState m ()
--- simplify terms rule = do
---   appendLog $ "Simplify: " ++ showTerms terms ++ " \n    By rule: " ++ show rule
---   rule' <- clone rule
---   let heads = getRuleHead rule'
---   let bodies = getRuleBody rule'
---   zipWithM_ unify heads terms
---   let removeFromUserStore = over getUserStore (map (\uc -> if view getTerm uc `elem` terms then set getDeleted True uc else uc))
---   modify $ over getGoal (bodies ++) . removeFromUserStore
+deactivate :: Monad m => UserConstraint -> StateT EvalState m ()
+deactivate uc =
+  -- trace ("Deactivating: " ++ show uc) $
+  do
+    es <- get
+    let ucs = view getUserStore es
+    let ucs' = map (\uc' -> if uc' == uc then set getActiveness False uc' else uc') ucs
+    modify $ set getUserStore ucs'
 
--- propagate :: Monad m => [Term] -> Rule -> StateT EvalState m ()
--- propagate terms rule = do
---   appendLog $ "Propagate: " ++ showTerms terms ++ " \n    By rule: " ++ show rule
---   rule' <- clone rule
---   let heads = getRuleHead rule'
---   let bodies = getRuleBody rule'
---   zipWithM_ unify heads terms
---   modify $ over getGoal (bodies ++)
+activate :: Monad m => UserConstraint -> StateT EvalState m ()
+activate uc = do
+  es <- get
+  let ucs = view getUserStore es
+  let ucs' = map (\uc' -> if uc' == uc then set getActiveness True uc' else uc') ucs
+  modify $ set getUserStore ucs'
 
 permute :: Int -> [a] -> [[a]]
-permute n = concatMap permutations . filter ((==n) . length) . subsequences
+permute n = concatMap permutations . filter ((== n) . length) . subsequences
 
 choose :: Int -> [a] -> [[a]]
-choose n = filter ((==n) . length) . subsequences
+choose n = filter ((== n) . length) . subsequences
 
 match :: Monad m => Rule -> StateT EvalState m MatchResult
 match rule = do
@@ -286,26 +292,35 @@ match rule = do
   let headSize = length ruleHead
   let constraintGroups = permute headSize userStore
   let tries = map (zip ruleHead) constraintGroups
-  hasMatch <- find isMatched `liftM` mapM
-    ( \ pairs -> do
-      let matchedConstraint = map snd pairs
-      let vars = allVars . map (view getTerm . snd) $ pairs
-      mapM_ skolemise vars
-      results <- mapM (\(left, right) -> unify left (view getTerm right)) pairs
-      let matchHistory = ruleId : map (view getId . snd) pairs
-      let isHistorical = matchHistory `elem` view getMatchHistory es
-      goal <- mapM derive ruleBody
-      put es
-      if (not isHistorical && and results)
-        then return $ Matched {
-            _matchedRule = rule,
-            _matchedConstraints = matchedConstraint,
-            _newGoal = goal,
-            _history = matchHistory
-          }
-        else return Unmatch
-    )
-    tries
+  hasMatch <-
+    find isMatched
+      <$> mapM
+        ( \pairs -> do
+            let matchedConstraint = map snd pairs
+            let matchHistory = ruleId : map (view getId . snd) pairs
+            let isHistorical = matchHistory `elem` view getMatchHistory es
+            -- this part reads: if all matching constraints for a PROPAGATION RULE are inactive, then it fails automatically
+            -- if the matching combination has happened before, it fails automatically
+            if ((not . any (view getActiveness)) matchedConstraint && isPropRule rule) || isHistorical
+              then return Unmatch
+              else do
+                let vars = allVars . map (view getTerm . snd) $ pairs
+                mapM_ skolemise vars
+                results <- mapM (\(left, right) -> unify left (view getTerm right)) pairs
+                goal <- mapM derive ruleBody
+                put es
+                if and results
+                  then
+                    return $
+                      Matched
+                        { _matchedRule = rule,
+                          _matchedConstraints = matchedConstraint,
+                          _newGoal = goal,
+                          _history = matchHistory
+                        }
+                  else return Unmatch
+        )
+        tries
   case hasMatch of
     Nothing -> return Unmatch -- match failed
     Just m -> return m
@@ -320,7 +335,7 @@ matchRules (rule : rules) = do
   result <- match rule
   case result of
     Unmatch -> matchRules rules
-    m@(Matched {}) -> return m
+    m@Matched {} -> return m
 
 eval :: Monad m => StateT EvalState m ()
 eval = do
@@ -333,13 +348,19 @@ eval = do
         Unmatch -> appendLog "No rule can fire"
         Matched rule machedConstraints goal' history ->
           case rule of
-            SimpRule {} -> do
-              let removeMatchingHead = over getUserStore (map (\uc -> if uc `elem` machedConstraints then set getDeleted True uc else uc))
-              modify $ over getGoal (goal' ++) . removeMatchingHead
-              eval
-            PropRule {} -> do
-              modify $ over getMatchHistory (history:) .  over getGoal (goal' ++)
-              eval
+            SimpRule {} ->
+              -- trace ("History: " ++ show history ++ " Cons: " ++ showTerms goal') $
+              do
+                let removeMatchingHead = over getUserStore (map (\uc -> if uc `elem` machedConstraints then set getDeleted True uc else uc))
+                modify $ over getGoal (goal' ++) . removeMatchingHead
+                mapM_ deactivate machedConstraints
+                eval
+            PropRule {} ->
+              -- trace ("History: " ++ show history ++ " Cons: " ++ showTerms goal') $
+              do
+                modify $ over getMatchHistory (history :) . over getGoal (goal' ++)
+                mapM_ deactivate machedConstraints
+                eval
     else
       if isBuiltIn (head goal)
         then solve (head goal) >> eval
@@ -353,8 +374,7 @@ main = do
         EvalState
           { _getNextVar = 20,
             _getGoal =
-              [
-                lt 10 11,
+              [ lt 10 11,
                 lt 11 12,
                 lt 12 13,
                 lt 13 14,
@@ -364,22 +384,23 @@ main = do
             _getBuiltInStore = IM.empty,
             _getLog = [],
             _getRules =
-              [
-
-              ],
+              [],
             _getMatchHistory = []
           }
-  let newState = execState (
-                  addSimpRule "antisymitry" [lt 0 0] [] >>
-                  addSimpRule "reflection"  [lt 0 1, lt 1 0] [eq 1 0] >>
-                  addPropRule "transitive"  [lt 0 1, lt 1 2] [lt 0 2]
-              ) state
+  let newState =
+        execState
+          ( addSimpRule "reflection" [lt 0 1, lt 1 0] [eq 1 0]
+              >> addSimpRule "antisymitry" [lt 0 0] []
+              >> addPropRule "transitive" [lt 0 1, lt 1 2] [lt 0 2]
+          )
+          state
 
-  putStrLn "\n----- Rules  -----"
-  mapM_ print (view getRules newState)
   let state' = execState eval newState
   let log = view getLog state'
+
   mapM_ putStrLn log
+  putStrLn "\n----- Rules  -----"
+  mapM_ print (view getRules state')
   putStrLn "\n----- Goals  -----"
   mapM_ print (view getGoal state')
   putStrLn "\n----- User Store  -----"
