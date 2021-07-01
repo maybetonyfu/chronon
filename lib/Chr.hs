@@ -19,6 +19,8 @@ type Body = [Term]
 
 data Term = Var Int | Fun String [Term] deriving (Eq)
 
+author = "Tony"
+
 instance Show Term where
   show (Var n) = "v_" ++ show n
   show (Fun name []) = name
@@ -34,8 +36,12 @@ showTerms [] = "Empty"
 showTerms ts = intercalate "," . map show $ ts
 
 isBuiltIn :: Term -> Bool
-isBuiltIn (Fun "eq" [x, y]) = True -- Currently only 'Equality' is in Consitraint theory
+isBuiltIn (Fun "eq" [x, y]) = True 
+isBuiltIn (Fun "true" []) = True 
+isBuiltIn (Fun "false" []) = True
 isBuiltIn (Fun "eq" xs) = error $ "Equality check should only have arity 2, encountered arity " ++ show (length xs)
+isBuiltIn (Fun "true" _) = error "Constant 'true' cannot be used as a function"
+isBuiltIn (Fun "false" _) = error "Constant 'false' cannot be used as a function"
 isBuiltIn _ = False
 
 data Rule
@@ -261,6 +267,8 @@ solve t@(Fun _ [x, y]) = do
   es <- get
   mapM_ activate (view getUserStore es)
   modify $ over getGoal (filter (/= t))
+solve t@(Fun "true" []) = return ()
+solve t@(Fun "false" []) = return ()
 solve _ = error "Cannot solve user constraint"
 
 deactivate :: Monad m => UserConstraint -> StateT EvalState m ()

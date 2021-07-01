@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d8f46212fd748a57a25996b0911040a699acf04cf8fd630c2f606713930312c8
+-- hash: 07e3df6ec77af40516e0887e3becca797769dee67f0cea41ed9ec2bdc602e9e9
 
 name:           chronon
 version:        0.1.0.0
@@ -13,9 +13,7 @@ build-type:     Simple
 library
   exposed-modules:
       Chr
-      Chronon
       ChrParser
-      Unify
   hs-source-dirs:
       lib
   build-depends:
@@ -50,8 +48,8 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      ChrononSpec
-      UnifySpec
+      ChrParserSpec
+      ChrSpec
       Paths_chronon
   hs-source-dirs:
       test

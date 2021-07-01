@@ -68,7 +68,15 @@ simpRule = do
     bodies <- lexeme $ sepBy term (lexeme $ char ',')
     return $ PSimpRule ruleName heads bodies
 
+rule :: Parser PRule
 rule = try propRule <|> simpRule
+
+constraintProgram :: Parser [PTerm]
+constraintProgram = sepEndBy term (many1 endOfLine)
+
+chrProgram :: Parser [PRule]
+chrProgram = sepEndBy rule (many1 endOfLine)
+
 
 main :: IO ()
 main = do
