@@ -24,8 +24,8 @@ lexeme :: Parser a -> Parser a
 lexeme p = p <* many (oneOf " \t")
 
 data PTerm = PVar String | PCon String | PFun String [PTerm] deriving (Show)
-data PRule = 
-    PPropRule String [PTerm] [PTerm] 
+data PRule =
+      PPropRule String [PTerm] [PTerm]
     | PSimpRule String [PTerm] [PTerm] deriving Show
 
 variable :: Parser PTerm
@@ -78,8 +78,8 @@ chrProgram :: Parser [PRule]
 chrProgram = sepEndBy rule (many1 endOfLine)
 
 
-main :: IO ()
-main = do
+test :: IO ()
+test = do
   parseTest term "true"
   parseTest term "X0  "
   parseTest term "X1"
@@ -88,3 +88,15 @@ main = do
   parseTest term "f(X1, g(Y, true))"
   parseTest rule "a: f(X) ==> g(X) "
   parseTest rule "a: f(X) <=> false "
+
+main :: IO ()
+main = do
+    args <- getArgs
+    case a of
+      (a:b:_) -> do
+        chrs <- parseFromFile (lexeme chrProgram) a
+        constraints <- parseFromFile (lexeme constraintProgram) b
+        case result of
+          Left _ -> error "Parse error"
+          Right t -> print $ eval (toCanonical t)
+      _ -> error "please pass one argument with the file containing the text to parse"
