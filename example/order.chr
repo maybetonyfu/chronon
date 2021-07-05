@@ -1,0 +1,3 @@
+1: lt(X, X) <=> true
+2: lt(X, Y), lt( Y, X ) <=> eq(X, X) 
+3: lt(X, Y), lt(Y, Z) ==> lt(X, Z) 

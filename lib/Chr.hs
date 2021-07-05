@@ -8,8 +8,8 @@ import Control.Monad.Trans.State.Lazy
 import Data.Bifunctor
 import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
-import qualified Data.Map as Map
 import Data.List
+import qualified Data.Map as Map
 import Data.Maybe
 import Debug.Trace
 
@@ -36,8 +36,8 @@ showTerms [] = "Empty"
 showTerms ts = intercalate "," . map show $ ts
 
 isBuiltIn :: Term -> Bool
-isBuiltIn (Fun "eq" [x, y]) = True 
-isBuiltIn (Fun "true" []) = True 
+isBuiltIn (Fun "eq" [x, y]) = True
+isBuiltIn (Fun "true" []) = True
 isBuiltIn (Fun "false" []) = True
 isBuiltIn (Fun "eq" xs) = error $ "Equality check should only have arity 2, encountered arity " ++ show (length xs)
 isBuiltIn (Fun "true" _) = error "Constant 'true' cannot be used as a function"
@@ -121,12 +121,25 @@ data MatchResult
 
 makeLenses ''MatchResult
 
-freshVar :: Monad m => String -> [String] -> StateT EvalState m Term
-freshVar symbol comments = do
+registerVar :: Monad m => String -> [String] -> StateT EvalState m ()
+registerVar symbol comments = do
   es <- get
   let v = view getNextVar es
   modify $ over getNextVar (+ 1) . over symbolMap (Map.insert symbol (v, comments))
-  return (Var v)
+
+lookupVar :: Monad m => String -> StateT EvalState m (Maybe Term)
+lookupVar symbol = do
+  es <- get
+  case Map.lookup symbol (view symbolMap es) of
+    Nothing -> return Nothing
+    Just (t, _) -> return $ Just (Var t)
+
+setVar :: Monad m => String -> [String] -> StateT EvalState m Term
+setVar symbol comments = do
+  inContext <- lookupVar symbol
+  case inContext of
+    Nothing -> registerVar symbol comments >> setVar symbol comments
+    Just t -> return t
 
 addSimpRule :: Monad m => String -> Head -> Body -> StateT EvalState m ()
 addSimpRule name head body = do
@@ -378,28 +391,28 @@ eval = do
         then solve (head goal) >> eval
         else introduce (head goal) >> eval
 
+type ChrState = StateT EvalState
+
+-- addGoal :: ChrState
+
+initState :: EvalState
+initState =
+  EvalState
+    { _getNextVar = 100,
+      _symbolMap = Map.empty,
+      _getGoal = [],
+      _getUserStore = [],
+      _getBuiltInStore = IM.empty,
+      _getLog = [],
+      _getRules = [],
+      _getMatchHistory = []
+    }
+
 main :: IO ()
 main = do
   let lt x y = Fun "lt" [Var x, Var y]
   let eq x y = Fun "eq" [Var x, Var y]
-  let state =
-        EvalState
-          { _getNextVar = 20,
-            _symbolMap = Map.empty,
-            _getGoal =
-              [ lt 10 11,
-                lt 11 12,
-                lt 12 13,
-                lt 13 14,
-                lt 14 10
-              ],
-            _getUserStore = [],
-            _getBuiltInStore = IM.empty,
-            _getLog = [],
-            _getRules = [],
-            _getMatchHistory = []
-          }
-
+  let state = initState
   let state' =
         execState
           ( addPropRule "transitive" [lt 0 1, lt 1 2] [lt 0 2]

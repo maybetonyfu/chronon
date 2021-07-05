@@ -1,9 +1,8 @@
-LT(a,a) ==> True
-LT(a,b), LT(b,a) ==> EQ(a,b)
-LT(a,b), LT(b,c) <=> LT(a,c)
 
 (tall(), )
 
+
+Example from https://www.brainzilla.com
 The perf is visited on Monday or Tuesday, not black hair,  
 
 john works is blond, 
