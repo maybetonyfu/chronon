@@ -1,17 +1,17 @@
 module ChrParser where
 
 import Chr hiding (main)
-import Control.Applicative ((*>), (<$), (<$>), (<*), (<*>))
 import Control.Lens
-import Control.Monad
 import Control.Monad.Trans.State.Lazy
 import Data.List
 import Data.Maybe
 import System.Environment
-import Text.Parsec
 import Text.Parsec.Char
 import Text.Parsec.Combinator
-import Text.Parsec.String (Parser, parseFromFile)
+import Text.Parsec
+import Text.Parsec.String
+import qualified Data.Map as Map
+import qualified Data.IntMap as IM
 
 lexeme :: Parser a -> Parser a
 lexeme p = p <* many (oneOf " \t")
@@ -23,20 +23,24 @@ data PRule
   | PSimpRule String [PTerm] [PTerm]
   deriving (Show)
 
+identifier :: Parser Char 
+identifier = alphaNum  <|> char '_'
+
 variable :: Parser PTerm
 variable = do
   u <- upper
-  v <- lexeme $ many alphaNum
+  v <- many identifier
   return $ PVar (u : v)
 
 constant :: Parser PTerm
 constant = do
-  v <- many1 alphaNum
-  return $ PCon v
+  u <- lower 
+  v <- many identifier
+  return $ PCon (u:v)
 
 function :: Parser PTerm
 function = do
-  fname <- many1 letter
+  fname <- lexeme $ many1 identifier
   lexeme $ char '('
   terms <- sepBy term (lexeme $ char ',')
   lexeme $ char ')'
@@ -47,7 +51,7 @@ term = variable <|> try function <|> constant
 
 propRule :: Parser PRule
 propRule = do
-  ruleName <- lexeme $ many1 alphaNum
+  ruleName <- lexeme $ many1 identifier
   lexeme $ char ':'
   heads <- lexeme $ sepBy term (lexeme $ char ',')
   lexeme $ string "==>"
@@ -56,12 +60,13 @@ propRule = do
 
 simpRule :: Parser PRule
 simpRule = do
-  ruleName <- lexeme $ many1 alphaNum
+  ruleName <- lexeme $ many1 identifier
   lexeme $ char ':'
   heads <- lexeme $ sepBy term (lexeme $ char ',')
   lexeme $ string "<=>"
   bodies <- lexeme $ sepBy term (lexeme $ char ',')
   return $ PSimpRule ruleName heads bodies
+
 
 rule :: Parser PRule
 rule = try propRule <|> simpRule
@@ -139,6 +144,8 @@ main = do
           let log = view getLog state'
 
           mapM_ putStrLn log
+          putStrLn "\n----- Symbol Map -----"
+          mapM_ print (Map.assocs . view symbolMap  $ state')
           putStrLn "\n----- Rules -----"
           mapM_ print (view getRules state')
           putStrLn "\n----- Goals -----"
@@ -146,7 +153,7 @@ main = do
           putStrLn "\n----- User Store -----"
           mapM_ print (view getUserStore state')
           putStrLn "\n----- Built-in Store -----"
-          mapM_ print (view getBuiltInStore state')
+          mapM_ print (IM.assocs . view getBuiltInStore $ state')
           putStrLn "\n----- Match history -----"
           mapM_ print (view getMatchHistory state')
     _ -> error "please pass one argument with the file containing the text to parse"
