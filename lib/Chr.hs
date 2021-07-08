@@ -107,7 +107,8 @@ data EvalState = EvalState
     _getLog :: [String],
     _getRules :: [Rule],
     _getMatchHistory :: [[Int]],
-    _step :: Int
+    _step :: Int,
+    _skolemised :: [Int]
   }
   deriving (Show, Eq)
 
@@ -418,7 +419,8 @@ initState =
       _getLog = [],
       _getRules = [],
       _getMatchHistory = [],
-      _step = 0
+      _step = 0,
+      _skolemised = []
     }
 
 main :: IO ()
