@@ -3,15 +3,15 @@ module ChrParser where
 import Chr hiding (main)
 import Control.Lens
 import Control.Monad.Trans.State.Lazy
+import qualified Data.IntMap as IM
 import Data.List
+import qualified Data.Map as Map
 import Data.Maybe
 import System.Environment
+import Text.Parsec
 import Text.Parsec.Char
 import Text.Parsec.Combinator
-import Text.Parsec
 import Text.Parsec.String
-import qualified Data.Map as Map
-import qualified Data.IntMap as IM
 
 lexeme :: Parser a -> Parser a
 lexeme p = p <* many (oneOf " \t")
@@ -23,8 +23,8 @@ data PRule
   | PSimpRule String [PTerm] [PTerm]
   deriving (Show)
 
-identifier :: Parser Char 
-identifier = alphaNum  <|> char '_'
+identifier :: Parser Char
+identifier = alphaNum <|> char '_'
 
 variable :: Parser PTerm
 variable = do
@@ -34,9 +34,9 @@ variable = do
 
 constant :: Parser PTerm
 constant = do
-  u <- lower 
+  u <- lower
   v <- many identifier
-  return $ PCon (u:v)
+  return $ PCon (u : v)
 
 function :: Parser PTerm
 function = do
@@ -66,7 +66,6 @@ simpRule = do
   lexeme $ string "<=>"
   bodies <- lexeme $ sepBy term (lexeme $ char ',')
   return $ PSimpRule ruleName heads bodies
-
 
 rule :: Parser PRule
 rule = try propRule <|> simpRule
@@ -145,7 +144,7 @@ main = do
 
           mapM_ putStrLn log
           putStrLn "\n----- Symbol Map -----"
-          mapM_ print (Map.assocs . view symbolMap  $ state')
+          mapM_ print (Map.assocs . view symbolMap $ state')
           putStrLn "\n----- Rules -----"
           mapM_ print (view getRules state')
           putStrLn "\n----- Goals -----"

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 07e3df6ec77af40516e0887e3becca797769dee67f0cea41ed9ec2bdc602e9e9
+-- hash: 9a3a6de6ded2c91e81deb964da1d862b767e6b6b0975c38a57f832f57e1af28a
 
 name:           chronon
 version:        0.1.0.0
@@ -14,6 +14,7 @@ library
   exposed-modules:
       Chr
       ChrParser
+      Graph
   hs-source-dirs:
       lib
   build-depends:

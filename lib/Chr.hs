@@ -5,12 +5,10 @@ module Chr where
 import Control.Lens
 import Control.Monad
 import Control.Monad.Trans.State.Lazy
-import Data.Bifunctor
 import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
 import Data.List
 import qualified Data.Map as Map
-import Data.Maybe
 import Debug.Trace
 
 type Head = [Term]
@@ -20,6 +18,11 @@ type Body = [Term]
 data Term = Var Int | Fun String [Term] deriving (Eq)
 
 author = "Tony"
+
+ifM :: Monad m => m Bool -> m a -> m a -> m a
+ifM mcondition mthen melse = do 
+  condition <- mcondition
+  if condition then mthen else melse
 
 instance Show Term where
   show (Var n) = "v_" ++ show n
@@ -103,7 +106,8 @@ data EvalState = EvalState
     _getBuiltInStore :: BuiltInStore,
     _getLog :: [String],
     _getRules :: [Rule],
-    _getMatchHistory :: [[Int]]
+    _getMatchHistory :: [[Int]],
+    _step :: Int
   }
   deriving (Show, Eq)
 
@@ -254,6 +258,7 @@ derive (Var x) = do
     Just (Aliased as) -> return (Var x)
     Just (Skolemised sk) -> return (Var sk)
     Just (Bound t) -> return t
+
 derive (Fun name args) = do
   args' <- mapM derive args
   return (Fun name args')
@@ -273,15 +278,20 @@ introduce term =
       Nothing -> modify $ over getGoal (filter (/= term)) . over getUserStore ([UserConstraint term False True nextConstraintId] ++)
       Just t -> modify $ over getGoal (filter (/= term))
 
-solve :: Monad m => Term -> StateT EvalState m ()
-solve t@(Fun _ [x, y]) = do
-  appendLog $ "Solve: " ++ show x ++ " = " ++ show y
-  unify x y
-  es <- get
-  mapM_ activate (view getUserStore es)
-  modify $ over getGoal (filter (/= t))
-solve t@(Fun "true" []) = return ()
-solve t@(Fun "false" []) = return ()
+solve :: Monad m => Term -> StateT EvalState m Bool
+solve t@(Fun _ [x, y]) = 
+  -- trace ("Solving " ++ show x ++ " = "  ++ show y) $
+  do
+    appendLog $ "Solve: " ++ show x ++ " = " ++ show y
+    ifM (unify x y)
+      (do
+        es <- get
+        mapM_ activate (view getUserStore es)
+        modify $ over getGoal (filter (/= t))
+        return True)
+      (return False)
+solve t@(Fun "true" []) = trace "Solving: True" return True
+solve t@(Fun "false" []) = trace "Solving: False" return False
 solve _ = error "Cannot solve user constraint"
 
 deactivate :: Monad m => UserConstraint -> StateT EvalState m ()
@@ -294,11 +304,13 @@ deactivate uc =
     modify $ set getUserStore ucs'
 
 activate :: Monad m => UserConstraint -> StateT EvalState m ()
-activate uc = do
-  es <- get
-  let ucs = view getUserStore es
-  let ucs' = map (\uc' -> if uc' == uc then set getActiveness True uc' else uc') ucs
-  modify $ set getUserStore ucs'
+activate uc = 
+  -- trace ("Active: " ++ show uc) $
+  do
+    es <- get
+    let ucs = view getUserStore es
+    let ucs' = map (\uc' -> if uc' == uc then set getActiveness True uc' else uc') ucs
+    modify $ set getUserStore ucs'
 
 permute :: Int -> [a] -> [[a]]
 permute n = concatMap permutations . filter ((== n) . length) . subsequences
@@ -364,6 +376,7 @@ matchRules (rule : rules) = do
 
 eval :: Monad m => StateT EvalState m ()
 eval = do
+  modify $ over step (+1)
   es <- get
   let goal = view getGoal es
   if null goal
@@ -372,28 +385,27 @@ eval = do
       case result of
         Unmatch -> appendLog "No rule can fire"
         Matched rule machedConstraints goal' history ->
+          -- trace ("Rule matched" ++ show rule) $
           case rule of
             SimpRule {} ->
-              -- trace ("History: " ++ show history ++ " Cons: " ++ showTerms goal') $
+              -- trace ("Simplify: " ++ show machedConstraints) $
               do
                 let removeMatchingHead = over getUserStore (map (\uc -> if uc `elem` machedConstraints then set getDeleted True uc else uc))
                 modify $ over getMatchHistory (history :) . over getGoal (goal' ++) . removeMatchingHead
                 mapM_ deactivate machedConstraints
                 eval
             PropRule {} ->
-              -- trace ("History: " ++ show history ++ " Cons: " ++ showTerms goal') $
+              -- trace ("Propagate: " ++ show machedConstraints) $
               do
                 modify $ over getMatchHistory (history :) . over getGoal (goal' ++)
                 mapM_ deactivate machedConstraints
                 eval
     else
       if isBuiltIn (head goal)
-        then solve (head goal) >> eval
+        then ifM (solve (head goal)) eval (appendLog "Cannot unify")
         else introduce (head goal) >> eval
 
 type ChrState = StateT EvalState
-
--- addGoal :: ChrState
 
 initState :: EvalState
 initState =
@@ -405,7 +417,8 @@ initState =
       _getBuiltInStore = IM.empty,
       _getLog = [],
       _getRules = [],
-      _getMatchHistory = []
+      _getMatchHistory = [],
+      _step = 0
     }
 
 main :: IO ()

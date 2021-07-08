@@ -1,17 +1,1 @@
-super_hero: spiderman(X), superman(X) ==> false
-super_hero: spiderman(X), batman(X) ==> false
-super_hero: superman(X), batman(X) ==> false
-
 super_hero: spiderman(X), notspiderman(X) ==> false
-super_hero: superman(X), notsuperman(X) ==> false
-super_hero: batman(X), notbatman(X) ==> false
-
-super_hero: spiderman(X) ==> notsuperman(X), notbatman(X)
-super_hero: superman(X) ==> notspiderman(X), notbatman(X)
-super_hero: batman(X) ==> notspiderman(X), notsuperman(X)
-
-super_hero: notsuperman(X), notbatman(X) <=> spiderman(X)
-super_hero: notsuperman(X), notspiderman(X) <=> batman(X)
-super_hero: notbatman(X), notspiderman(X) <=> superman(X)
-
-super_hero: spiderman(X), superman(Y), batman(Z) <=> true
