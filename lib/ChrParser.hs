@@ -152,7 +152,7 @@ main = do
           putStrLn "\n----- User Store -----"
           mapM_ print (view getUserStore state')
           putStrLn "\n----- Built-in Store -----"
-          mapM_ print (IM.assocs . view getBuiltInStore $ state')
+          print (view getBuiltInStore state')
           putStrLn "\n----- Match history -----"
           mapM_ print (view getMatchHistory state')
     _ -> error "please pass one argument with the file containing the text to parse"
