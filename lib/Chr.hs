@@ -57,11 +57,6 @@ instance Show Term where
   show (Fun name []) = name
   show (Fun name terms) = name ++ "(" ++ (intercalate "," . map show $ terms) ++ ")"
 
-allVars :: [Term] -> [Int]
-allVars [] = []
-allVars ((Var n) : ts) = let rest = allVars ts in if n `elem` rest then rest else n : rest
-allVars ((Fun _ ts') : ts) = allVars (ts' ++ ts)
-
 showTerms :: [Term] -> String
 showTerms [] = "Empty"
 showTerms ts = intercalate "," . map show $ ts
@@ -255,15 +250,19 @@ unify (Fun name ts) (Fun name' ts') =
         return $ all (== True) rs
       _ -> return False
 
-skolemise :: Monad m => Int -> StateT EvalState m ()
-skolemise x =
+skolemise :: Monad m => Term -> StateT EvalState m ()
+skolemise (Var x) =
   -- trace ( "Skolemise: Var " ++ show x) $
   do
     x' <- deref x
     case x' of
       Nothing -> modify $ over skolemised (Var x :)
       Just (Var _) -> return ()
-      Just (Fun _ _) -> error "Cannot skolemise a fun"
+      Just f@(Fun _ _) -> skolemise f
+skolemise (Fun name ts) = 
+  -- trace ( "Skolemise: Fun " ++ name) $
+  do 
+    mapM_ skolemise ts
 
 derive :: Monad m => Term -> StateT EvalState m Term
 derive (Var x) =
@@ -373,7 +372,7 @@ match rule = do
             if ((not . any (view getActiveness)) matchedConstraint && isPropRule rule) || isHistorical
               then return Unmatch
               else do
-                let vars = allVars . map (view getTerm . snd) $ pairs
+                let vars = map (view getTerm . snd) pairs
                 mapM_ skolemise vars -- For some reason, we need to force a strict evaluation on skolemise
                 results <- mapM (\(left, right) -> unify left (view getTerm right)) pairs
                 goal <- mapM derive ruleBody

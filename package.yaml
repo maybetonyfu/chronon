@@ -1,5 +1,5 @@
-name:                chronon
-version:             0.1.0.0
+name: chronon
+version: 0.1.0.0
 
 dependencies:
 - base >= 4.7 && < 5
@@ -18,8 +18,8 @@ library:
 
 executables:
   chronon:
-    main:                App.hs
-    source-dirs:         app
+    main: App.hs
+    source-dirs: app
     dependencies:
     - chronon
 
