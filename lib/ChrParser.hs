@@ -145,6 +145,8 @@ main = do
           mapM_ putStrLn log
           putStrLn "\n----- Symbol Map -----"
           mapM_ print (Map.assocs . view symbolMap $ state')
+          putStrLn "\n----- Result -----"
+          print (view result state')
           putStrLn "\n----- Rules -----"
           mapM_ print (view getRules state')
           putStrLn "\n----- Goals -----"

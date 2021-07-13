@@ -119,6 +119,14 @@ type UserStore = [UserConstraint]
 
 type BuiltInStore = Graph Term
 
+data EvalResult = RuleExausted | Unsatisfied UnifyResult | None deriving (Show, Eq)
+
+data UnifyResult = UnifyOK | UnifyOccured | UnifyFailed | UnifyContradict deriving (Show, Eq)
+
+isUnifySuccess :: UnifyResult -> Bool 
+isUnifySuccess UnifyOK = True 
+isUnifySuccess _ = False 
+
 data EvalState = EvalState
   { _getNextVar :: Int,
     _symbolMap :: Map.Map String (Int, [String]),
@@ -129,7 +137,8 @@ data EvalState = EvalState
     _getRules :: [Rule],
     _getMatchHistory :: [[Int]],
     _step :: Int,
-    _skolemised :: [Term]
+    _skolemised :: [Term],
+    _result :: EvalResult
   }
   deriving (Show)
 
@@ -214,7 +223,7 @@ occur n (Fun _ args) = do
   occured <- mapM (occur n) args
   return $ or occured
 
-unify :: Monad m => Term -> Term -> StateT EvalState m Bool
+unify :: Monad m => Term -> Term -> StateT EvalState m UnifyResult
 unify (Var x) (Var y) =
   -- trace ("Unify var " ++ show x ++ " and var " ++ show y) $
   do
@@ -223,22 +232,22 @@ unify (Var x) (Var y) =
     x' <- deref x
     y' <- deref y
     case (x', y') of
-      (Just (Var sk1), Just (Var sk2)) -> return (sk1 == sk2)
+      (Just (Var sk1), Just (Var sk2)) -> return (if sk1 == sk2 then UnifyOK else UnifyFailed)
       (Just f1@(Fun _ _), Just f2@(Fun _ _)) -> unify f1 f2
       (Just f@(Fun _ _), _) -> unify (Var y) f
       (_, Just f@(Fun _ _)) -> unify (Var x) f
-      (_, _) -> modify (over getBuiltInStore (addEdge (Var x) (Var y))) >> return True
+      (_, _) -> modify (over getBuiltInStore (addEdge (Var x) (Var y))) >> return UnifyOK
 unify (Var x) f@(Fun name ts) =
   -- trace ("Unify var " ++ show x ++ " and fun " ++ show f) $
   do
     occured <- x `occur` f
     if occured
-      then return False
+      then return UnifyOccured
       else do
         x' <- deref x
         case x' of
-          Nothing -> modify (over getBuiltInStore (addEdge (Var x) f)) >> return True
-          Just (Var _) -> return False
+          Nothing -> modify (over getBuiltInStore (addEdge (Var x) f)) >> return UnifyOK
+          Just (Var _) -> return UnifyFailed
           Just f'@(Fun _ _) -> unify f f'
 unify (Fun name ts) (Var x) = unify (Var x) (Fun name ts)
 unify (Fun name ts) (Fun name' ts') =
@@ -247,8 +256,8 @@ unify (Fun name ts) (Fun name' ts') =
     case (name == name', length ts == length ts') of
       (True, True) -> do
         rs <- zipWithM unify ts ts'
-        return $ all (== True) rs
-      _ -> return False
+        return $ if all (== UnifyOK) rs then UnifyOK else UnifyFailed
+      _ -> return UnifyFailed
 
 skolemise :: Monad m => Term -> StateT EvalState m ()
 skolemise (Var x) =
@@ -259,9 +268,9 @@ skolemise (Var x) =
       Nothing -> modify $ over skolemised (Var x :)
       Just (Var _) -> return ()
       Just f@(Fun _ _) -> skolemise f
-skolemise (Fun name ts) = 
+skolemise (Fun name ts) =
   -- trace ( "Skolemise: Fun " ++ name) $
-  do 
+  do
     mapM_ skolemise ts
 
 derive :: Monad m => Term -> StateT EvalState m Term
@@ -298,31 +307,31 @@ introduce term =
       Nothing -> modify $ over getGoal (filter (/= term)) . over getUserStore ([UserConstraint term False True nextConstraintId] ++)
       Just t -> modify $ over getGoal (filter (/= term))
 
-solve :: Monad m => Term -> StateT EvalState m Bool
+solve :: Monad m => Term -> StateT EvalState m UnifyResult
 solve t@(Fun _ [x, y]) =
   -- trace ("Solving " ++ show x ++ " = "  ++ show y) $
   do
     appendLog $ "Solve: " ++ show x ++ " = " ++ show y
-    ifM
-      (unify x y)
-      ( do
+    r <- unify x y
+    if isUnifySuccess r
+      then 
+        do
           es <- get
           mapM_ activate (view getUserStore es)
           modify $ over getGoal (filter (/= t))
-          return True
-      )
-      (return False)
+          return r
+      else return r
 solve t@(Fun "true" []) =
   -- trace "Solve: true" $
   do
     appendLog "Solve: True"
     modify $ over getGoal (filter (/= t))
-    return True
+    return UnifyOK
 solve t@(Fun "false" []) =
   -- trace "Solve: false" $
   do
     appendLog "Solve: False"
-    return False
+    return UnifyContradict
 solve _ = error "Cannot solve user constraint"
 
 deactivate :: Monad m => UserConstraint -> StateT EvalState m ()
@@ -374,10 +383,10 @@ match rule = do
               else do
                 let vars = map (view getTerm . snd) pairs
                 mapM_ skolemise vars -- For some reason, we need to force a strict evaluation on skolemise
-                results <- mapM (\(left, right) -> unify left (view getTerm right)) pairs
+                rs <- mapM (\(left, right) -> unify left (view getTerm right)) pairs
                 goal <- mapM derive ruleBody
                 put es
-                if and results
+                if all isUnifySuccess rs
                   then
                     return $
                       Matched
@@ -400,8 +409,8 @@ isMatched _ = True
 matchRules :: Monad m => [Rule] -> StateT EvalState m MatchResult
 matchRules [] = return Unmatch
 matchRules (rule : rules) = do
-  result <- match rule
-  case result of
+  r <- match rule
+  case r of
     Unmatch -> matchRules rules
     m@Matched {} -> return m
 
@@ -412,16 +421,16 @@ eval = do
   let goal = view getGoal es
   if null goal
     then do
-      result <- matchRules (view getRules es)
-      case result of
-        Unmatch -> appendLog "No rule can fire"
+      r <- matchRules (view getRules es)
+      case r of
+        Unmatch -> modify (set result RuleExausted)
         Matched rule machedConstraints goal' history ->
           -- trace ("Rule matched" ++ show rule) $
           case rule of
             SimpRule {} ->
               -- trace ("Simplify: " ++ show machedConstraints) $
               do
-                appendLog $ "Simplify: Rule=" ++ show rule ++ " Constraints: " ++ show machedConstraints
+                appendLog $ "Simplify: Rule=" ++ show (getRuleId rule) ++ ", Constraints: " ++ intercalate "," (map (show . view getId) machedConstraints)
                 let removeMatchingHead = over getUserStore (map (\uc -> if uc `elem` machedConstraints then set getDeleted True uc else uc))
                 modify $ over getMatchHistory (history :) . over getGoal (goal' ++) . removeMatchingHead
                 mapM_ deactivate machedConstraints
@@ -429,13 +438,15 @@ eval = do
             PropRule {} ->
               -- trace ("Propagate: " ++ show machedConstraints) $
               do
-                appendLog $ "Propagate: Rule=" ++ show rule ++ " Constraints: " ++ show machedConstraints
+                appendLog $ "Propagate: Rule=" ++ show (getRuleId rule) ++ ", Constraints: " ++ intercalate "," (map (show . view getId) machedConstraints)
                 modify $ over getMatchHistory (history :) . over getGoal (goal' ++)
                 mapM_ deactivate machedConstraints
                 eval
     else
       if isBuiltIn (head goal)
-        then ifM (solve (head goal)) eval (appendLog "Cannot unify")
+        then do
+          r <- solve (head goal)
+          if isUnifySuccess r then eval else modify (set result $ Unsatisfied r) 
         else introduce (head goal) >> eval
 
 type ChrState = StateT EvalState
@@ -452,7 +463,8 @@ initState =
       _getRules = [],
       _getMatchHistory = [],
       _step = 0,
-      _skolemised = []
+      _skolemised = [],
+      _result = None
     }
 
 main :: IO ()
@@ -473,6 +485,8 @@ main = do
   let log = view getLog state'
 
   mapM_ putStrLn log
+  putStrLn "\n----- Result -----"
+  print (view result state')
   putStrLn "\n----- Rules -----"
   mapM_ print (view getRules state')
   putStrLn "\n----- Goals -----"
