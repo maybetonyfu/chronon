@@ -45,6 +45,7 @@ isFun :: Term -> Bool
 isFun (Fun _ (x : _)) = True
 isFun _ = False
 
+author :: String
 author = "Tony"
 
 ifM :: Monad m => m Bool -> m a -> m a -> m a
@@ -191,7 +192,7 @@ addPropRule name head body = do
 substitute :: [(Int, Int)] -> Term -> Term
 substitute unifier (Var n) =
   case find ((== n) . fst) unifier of
-    Just (from, to) -> Var to
+    Just (_, toVar) -> Var toVar
     Nothing -> Var n
 substitute unifier (Fun name ts) = Fun name (map (substitute unifier) ts)
 
@@ -327,7 +328,7 @@ solve t@(Fun "true" []) =
     appendLog "Solve: True"
     modify $ over getGoal (filter (/= t))
     return UnifyOK
-solve t@(Fun "false" []) =
+solve (Fun "false" []) =
   -- trace "Solve: false" $
   do
     appendLog "Solve: False"
@@ -424,7 +425,7 @@ eval = do
       r <- matchRules (view getRules es)
       case r of
         Unmatch -> modify (set result RuleExausted)
-        Matched rule machedConstraints goal' history ->
+        Matched rule machedConstraints goal' historyEntry ->
           -- trace ("Rule matched" ++ show rule) $
           case rule of
             SimpRule {} ->
@@ -432,14 +433,14 @@ eval = do
               do
                 appendLog $ "Simplify: Rule=" ++ show (getRuleId rule) ++ ", Constraints: " ++ intercalate "," (map (show . view getId) machedConstraints)
                 let removeMatchingHead = over getUserStore (map (\uc -> if uc `elem` machedConstraints then set getDeleted True uc else uc))
-                modify $ over getMatchHistory (history :) . over getGoal (goal' ++) . removeMatchingHead
+                modify $ over getMatchHistory (historyEntry :) . over getGoal (goal' ++) . removeMatchingHead
                 mapM_ deactivate machedConstraints
                 eval
             PropRule {} ->
               -- trace ("Propagate: " ++ show machedConstraints) $
               do
                 appendLog $ "Propagate: Rule=" ++ show (getRuleId rule) ++ ", Constraints: " ++ intercalate "," (map (show . view getId) machedConstraints)
-                modify $ over getMatchHistory (history :) . over getGoal (goal' ++)
+                modify $ over getMatchHistory (historyEntry :) . over getGoal (goal' ++)
                 mapM_ deactivate machedConstraints
                 eval
     else
@@ -471,7 +472,7 @@ main :: IO ()
 main = do
   let lt x y = Fun "lt" [Var x, Var y]
   let eq x y = Fun "eq" [Var x, Var y]
-  let state = initState
+  let state1 = initState
   let state' =
         execState
           ( addPropRule "transitive" [lt 0 1, lt 1 2] [lt 0 2]
@@ -480,11 +481,11 @@ main = do
               >> modify (set getGoal [lt 10 11, lt 11 12, lt 12 13, lt 13 14, lt 14 10])
               >> eval
           )
-          state
+          state1
 
-  let log = view getLog state'
+  let runLog = view getLog state'
 
-  mapM_ putStrLn log
+  mapM_ putStrLn runLog
   putStrLn "\n----- Result -----"
   print (view result state')
   putStrLn "\n----- Rules -----"
