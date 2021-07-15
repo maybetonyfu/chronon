@@ -6,7 +6,7 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.Trans.State.Lazy
 import qualified Data.IntMap as IM
-import qualified Data.IntSet as IS
+-- import qualified Data.IntSet as IS
 import Data.List
 import qualified Data.Map as Map
 import Debug.Trace
@@ -104,6 +104,7 @@ instance Show Rule where
   show (SimpRule ruleid name heads bodies) = show ruleid ++ "." ++ name ++ ":\t" ++ showTerms heads ++ " <=> " ++ showTerms bodies
   show (PropRule ruleid name heads bodies) = show ruleid ++ "." ++ name ++ ":\t" ++ showTerms heads ++ " ==> " ++ showTerms bodies
 
+
 data UserConstraint = UserConstraint
   { _getTerm :: Term,
     _getDeleted :: Bool,
@@ -189,12 +190,36 @@ addPropRule name head body = do
   let numberOfRules = length $ view getRules es
   modify $ over getRules (++ [PropRule numberOfRules name head body])
 
-substitute :: [(Int, Int)] -> Term -> Term
-substitute unifier (Var n) =
-  case find ((== n) . fst) unifier of
-    Just (_, toVar) -> Var toVar
-    Nothing -> Var n
+substitute :: [(Term, Term)] -> Term -> Term
+substitute unifier t@(Var _) =
+  case find ((== t) . fst) unifier of
+    Just (_, toVar) -> toVar
+    Nothing -> t
 substitute unifier (Fun name ts) = Fun name (map (substitute unifier) ts)
+
+clone :: Monad m => Rule -> StateT EvalState m Rule
+clone rule@(SimpRule ruleId name heads bodies) = do
+  let vars = nub . concatMap allVars $ (heads ++ bodies)
+  unifier <- mapM 
+    (\v -> do
+        es <- get 
+        let nextVarName = ('a':) . show . view getNextVar $  es
+        v' <- setVar nextVarName ["Simplified from rule id=" ++ show ruleId]; return (v, v') 
+      ) 
+      vars
+  return $ SimpRule ruleId name (map (substitute unifier) heads) (map (substitute unifier) bodies)
+  where allVars (Var x) = [Var x]
+        allVars (Fun _ ts) = concatMap allVars ts
+clone rule@(PropRule ruleId name heads bodies) = do
+  let vars = nub . concatMap allVars $ (heads ++ bodies)
+  unifier <- mapM 
+    (\v -> do
+        v' <- setVar ("a" ++ show v) ["Simplified from rule id=" ++ show ruleId]; return (v, v') 
+      ) 
+      vars
+  return $ SimpRule ruleId name (map (substitute unifier) heads) (map (substitute unifier) bodies)
+  where allVars (Var x) = [Var x]
+        allVars (Fun _ ts) = concatMap allVars ts
 
 deref :: Monad m => Int -> StateT EvalState m (Maybe Term)
 deref n = do
@@ -203,9 +228,6 @@ deref n = do
   let reached = Var n `reachable` buitInStore
   let skolemisedVars = view skolemised es
   return $ find (\t -> isFun t || isCon t || t `elem` skolemisedVars) reached
-
--- ref :: Monad m => Int -> Target -> StateT EvalState m ()
--- ref n t = modify $ over getBuiltInStore (IM.insert n t)
 
 occur :: Monad m => Int -> Term -> StateT EvalState m Bool
 occur n (Var m) =
@@ -375,6 +397,7 @@ match rule = do
       <$> mapM
         ( \pairs -> do
             let matchedConstraint = map snd pairs
+            let matchedTerms = map (view getTerm) matchedConstraint
             let matchHistory = ruleId : map (view getId . snd) pairs
             let isHistorical = matchHistory `elem` view getMatchHistory es
             -- this part reads: if all matching constraints for a PROPAGATION RULE are inactive, then it fails automatically
@@ -385,15 +408,17 @@ match rule = do
                 let vars = map (view getTerm . snd) pairs
                 mapM_ skolemise vars -- For some reason, we need to force a strict evaluation on skolemise
                 rs <- mapM (\(left, right) -> unify left (view getTerm right)) pairs
-                goal <- mapM derive ruleBody
                 put es
+                newRule <- clone rule
+                goal <- mapM derive (getRuleBody newRule)
+                let newBuiltIn = zipWith (\ a b -> Fun "eq" [a, b]) matchedTerms (getRuleHead newRule)
                 if all isUnifySuccess rs
                   then
                     return $
                       Matched
                         { _matchedRule = rule,
                           _matchedConstraints = matchedConstraint,
-                          _newGoal = goal,
+                          _newGoal = goal ++ newBuiltIn,
                           _history = matchHistory
                         }
                   else return Unmatch

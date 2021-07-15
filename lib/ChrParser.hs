@@ -4,6 +4,7 @@ import Chr hiding (main)
 import Control.Lens
 import Control.Monad.Trans.State.Lazy
 import qualified Data.IntMap as IM
+import qualified Data.Set as Set
 import Data.List
 import qualified Data.Map as Map
 import Data.Maybe
@@ -12,6 +13,7 @@ import Text.Parsec
 import Text.Parsec.Char
 import Text.Parsec.Combinator
 import Text.Parsec.String
+import Graph
 
 lexeme :: Parser a -> Parser a
 lexeme p = p <* many (oneOf " \t")
@@ -154,7 +156,7 @@ main = do
           putStrLn "\n----- User Store -----"
           mapM_ print (view getUserStore state')
           putStrLn "\n----- Built-in Store -----"
-          print (view getBuiltInStore state')
+          mapM_  (\(a, b) -> putStrLn (show a ++ "=" ++show b)) (Set.toList . view edges . view getBuiltInStore $ state')
           putStrLn "\n----- Match history -----"
           mapM_ print (view getMatchHistory state')
     _ -> error "please pass one argument with the file containing the text to parse"
