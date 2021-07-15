@@ -6,6 +6,7 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.Trans.State.Lazy
 import qualified Data.IntMap as IM
+import qualified Data.Set as Set
 -- import qualified Data.IntSet as IS
 import Data.List
 import qualified Data.Map as Map
@@ -63,7 +64,7 @@ showTerms [] = "Empty"
 showTerms ts = intercalate "," . map show $ ts
 
 isBuiltIn :: Term -> Bool
-isBuiltIn (Fun "eq" [x, y]) = True
+isBuiltIn (Fun "eq" [_, _]) = True
 isBuiltIn (Fun "true" []) = True
 isBuiltIn (Fun "false" []) = True
 isBuiltIn (Fun "eq" xs) = error $ "Equality check should only have arity 2, encountered arity " ++ show (length xs)
@@ -250,7 +251,6 @@ unify :: Monad m => Term -> Term -> StateT EvalState m UnifyResult
 unify (Var x) (Var y) =
   -- trace ("Unify var " ++ show x ++ " and var " ++ show y) $
   do
-    es <- get
     x' <- deref x
     y' <- deref y
     case (x', y') of
@@ -292,8 +292,7 @@ skolemise (Var x) =
       Just f@(Fun _ _) -> skolemise f
 skolemise (Fun _ ts) =
   -- trace ( "Skolemise: Fun " ++ name) $
-  do
-    mapM_ skolemise ts
+  mapM_ skolemise ts
 
 derive :: Monad m => Term -> StateT EvalState m Term
 derive (Var x) =
