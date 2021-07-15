@@ -142,6 +142,26 @@ data EvalState = EvalState
 
 makeLenses ''EvalState
 
+inspectEvalState :: EvalState -> IO ()
+inspectEvalState es = do
+  print "Hello"
+  let runLog = view getLog es
+  mapM_ putStrLn runLog
+  putStrLn "\n----- Symbol Map -----"
+  mapM_ print (Map.assocs . view symbolMap $ es)
+  putStrLn "\n----- Result -----"
+  print (view result es)
+  putStrLn "\n----- Rules -----"
+  mapM_ print (view getRules es)
+  putStrLn "\n----- Goals -----"
+  putStrLn . showTerms $ view getGoal es
+  putStrLn "\n----- User Store -----"
+  mapM_ print (view getUserStore es)
+  putStrLn "\n----- Built-in Store -----"
+  mapM_  (\(a, b) -> putStrLn (show a ++ "=" ++show b)) (Set.toList . view edges . view getBuiltInStore $ es)
+  putStrLn "\n----- Match history -----"
+  mapM_ print (view getMatchHistory es)
+
 data MatchResult
   = Unmatch
   | Matched
@@ -490,7 +510,7 @@ main = do
   let lt x y = Fun "lt" [Var x, Var y]
   let eq x y = Fun "eq" [Var x, Var y]
   let state1 = initState
-  let state' =
+  let state2 =
         execState
           ( addPropRule "transitive" [lt 0 1, lt 1 2] [lt 0 2]
               >> addSimpRule "reflection" [lt 0 1, lt 1 0] [eq 1 0]
@@ -499,19 +519,4 @@ main = do
               >> eval
           )
           state1
-
-  let runLog = view getLog state'
-
-  mapM_ putStrLn runLog
-  putStrLn "\n----- Result -----"
-  print (view result state')
-  putStrLn "\n----- Rules -----"
-  mapM_ print (view getRules state')
-  putStrLn "\n----- Goals -----"
-  putStrLn . showTerms $ view getGoal state'
-  putStrLn "\n----- User Store -----"
-  mapM_ print (view getUserStore state')
-  putStrLn "\n----- Built-in Store -----"
-  print (view getBuiltInStore state')
-  putStrLn "\n----- Match history -----"
-  mapM_ print (view getMatchHistory state')
+  inspectEvalState state2

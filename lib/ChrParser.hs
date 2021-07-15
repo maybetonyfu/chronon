@@ -14,6 +14,7 @@ import Text.Parsec.Char
 import Text.Parsec.Combinator
 import Text.Parsec.String
 import Graph
+import Control.Monad
 
 lexeme :: Parser a -> Parser a
 lexeme p = p <* many (oneOf " \t")
@@ -43,9 +44,9 @@ constant = do
 function :: Parser PTerm
 function = do
   fname <- lexeme $ many1 identifier
-  lexeme $ char '('
+  void . lexeme $ char '('
   terms <- sepBy term (lexeme $ char ',')
-  lexeme $ char ')'
+  void . lexeme $ char ')'
   return $ PFun fname terms
 
 term :: Parser PTerm
@@ -54,18 +55,18 @@ term = variable <|> try function <|> constant
 propRule :: Parser PRule
 propRule = do
   ruleName <- lexeme $ many1 identifier
-  lexeme $ char ':'
+  void . lexeme $ char ':'
   heads <- lexeme $ sepBy term (lexeme $ char ',')
-  lexeme $ string "==>"
+  void . lexeme $ string "==>"
   bodies <- lexeme $ sepBy term (lexeme $ char ',')
   return $ PPropRule ruleName heads bodies
 
 simpRule :: Parser PRule
 simpRule = do
   ruleName <- lexeme $ many1 identifier
-  lexeme $ char ':'
+  void . lexeme $ char ':'
   heads <- lexeme $ sepBy term (lexeme $ char ',')
-  lexeme $ string "<=>"
+  void . lexeme $ string "<=>"
   bodies <- lexeme $ sepBy term (lexeme $ char ',')
   return $ PSimpRule ruleName heads bodies
 
@@ -91,7 +92,6 @@ test = do
 
 assemble :: Monad m => [PRule] -> [PTerm] -> ChrState m ()
 assemble parsedRules parsedTerms = do
-  es <- get
   let symbolMapLocal = concatMap (nub . ruleSymbols) parsedRules
   mapM_
     ( \prule -> do
@@ -116,8 +116,8 @@ ptermToLocalTerm symbols (PFun name args) = Fun name (map (ptermToLocalTerm symb
 
 varSymbols :: PTerm -> [String] -- THis is purely LOCAL symbol map, just for symbols in rules
 varSymbols (PVar v) = [v]
-varSymbols (PCon c) = []
-varSymbols (PFun name ts) = concatMap (nub . varSymbols) ts
+varSymbols (PCon _) = []
+varSymbols (PFun _ ts) = concatMap (nub . varSymbols) ts
 
 ruleSymbols :: PRule -> [String]
 ruleSymbols (PSimpRule _ heads bodies) = concatMap (nub . varSymbols) (heads ++ bodies)
@@ -133,30 +133,14 @@ main = do
       case (chrResult, constraintResult) of
         (Left e, _) -> error $ show e
         (_, Left e) -> error $ show e
-        (Right chrs, Right cons) -> do
+        (Right chrs, Right constraints) -> do
           putStrLn "Constraint handling rules:"
           mapM_ print chrs
           putStrLn "\nConstraints:"
-          mapM_ print cons
+          mapM_ print constraints
           let state' =
                 execState
-                  (assemble chrs cons >> eval)
+                  (assemble chrs constraints >> eval)
                   initState
-          let log = view getLog state'
-
-          mapM_ putStrLn log
-          putStrLn "\n----- Symbol Map -----"
-          mapM_ print (Map.assocs . view symbolMap $ state')
-          putStrLn "\n----- Result -----"
-          print (view result state')
-          putStrLn "\n----- Rules -----"
-          mapM_ print (view getRules state')
-          putStrLn "\n----- Goals -----"
-          putStrLn . showTerms $ view getGoal state'
-          putStrLn "\n----- User Store -----"
-          mapM_ print (view getUserStore state')
-          putStrLn "\n----- Built-in Store -----"
-          mapM_  (\(a, b) -> putStrLn (show a ++ "=" ++show b)) (Set.toList . view edges . view getBuiltInStore $ state')
-          putStrLn "\n----- Match history -----"
-          mapM_ print (view getMatchHistory state')
+          inspectEvalState state'
     _ -> error "please pass one argument with the file containing the text to parse"
