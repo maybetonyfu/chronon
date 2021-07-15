@@ -49,11 +49,6 @@ isFun _ = False
 author :: String
 author = "Tony"
 
-ifM :: Monad m => m Bool -> m a -> m a -> m a
-ifM mcondition mthen melse = do
-  condition <- mcondition
-  if condition then mthen else melse
-
 instance Show Term where
   show (Var n) = "v_" ++ show n
   show (Fun name []) = name
