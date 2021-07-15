@@ -179,16 +179,16 @@ setVar symbol comments = do
     Just t -> return t
 
 addSimpRule :: Monad m => String -> Head -> Body -> StateT EvalState m ()
-addSimpRule name head body = do
+addSimpRule name heads body = do
   es <- get
   let numberOfRules = length $ view getRules es
-  modify $ over getRules (++ [SimpRule numberOfRules name head body])
+  modify $ over getRules (++ [SimpRule numberOfRules name heads body])
 
 addPropRule :: Monad m => String -> Head -> Body -> StateT EvalState m ()
-addPropRule name head body = do
+addPropRule name heads body = do
   es <- get
   let numberOfRules = length $ view getRules es
-  modify $ over getRules (++ [PropRule numberOfRules name head body])
+  modify $ over getRules (++ [PropRule numberOfRules name heads body])
 
 substitute :: [(Term, Term)] -> Term -> Term
 substitute unifier t@(Var _) =
@@ -198,7 +198,7 @@ substitute unifier t@(Var _) =
 substitute unifier (Fun name ts) = Fun name (map (substitute unifier) ts)
 
 clone :: Monad m => Rule -> StateT EvalState m Rule
-clone rule@(SimpRule ruleId name heads bodies) = do
+clone (SimpRule ruleId name heads bodies) = do
   let vars = nub . concatMap allVars $ (heads ++ bodies)
   unifier <- mapM 
     (\v -> do
@@ -210,7 +210,7 @@ clone rule@(SimpRule ruleId name heads bodies) = do
   return $ SimpRule ruleId name (map (substitute unifier) heads) (map (substitute unifier) bodies)
   where allVars (Var x) = [Var x]
         allVars (Fun _ ts) = concatMap allVars ts
-clone rule@(PropRule ruleId name heads bodies) = do
+clone (PropRule ruleId name heads bodies) = do
   let vars = nub . concatMap allVars $ (heads ++ bodies)
   unifier <- mapM 
     (\v -> do
@@ -251,7 +251,6 @@ unify (Var x) (Var y) =
   -- trace ("Unify var " ++ show x ++ " and var " ++ show y) $
   do
     es <- get
-    let sk = view skolemised es
     x' <- deref x
     y' <- deref y
     case (x', y') of
@@ -260,7 +259,7 @@ unify (Var x) (Var y) =
       (Just f@(Fun _ _), _) -> unify (Var y) f
       (_, Just f@(Fun _ _)) -> unify (Var x) f
       (_, _) -> modify (over getBuiltInStore (addEdge (Var x) (Var y))) >> return UnifyOK
-unify (Var x) f@(Fun name ts) =
+unify (Var x) f@(Fun _ _) =
   -- trace ("Unify var " ++ show x ++ " and fun " ++ show f) $
   do
     occured <- x `occur` f
@@ -291,7 +290,7 @@ skolemise (Var x) =
       Nothing -> modify $ over skolemised (Var x :)
       Just (Var _) -> return ()
       Just f@(Fun _ _) -> skolemise f
-skolemise (Fun name ts) =
+skolemise (Fun _ ts) =
   -- trace ( "Skolemise: Fun " ++ name) $
   do
     mapM_ skolemise ts
@@ -312,10 +311,10 @@ derive (Fun name args) =
     return (Fun name args')
 
 appendLog :: Monad m => String -> StateT EvalState m ()
-appendLog log = do
+appendLog runLog = do
   es <- get
   let st = view step es
-  let message = "[Step " ++ show st ++ "] " ++ log
+  let message = "[Step " ++ show st ++ "] " ++ runLog
   modify $ over getLog (++ [message])
 
 introduce :: Monad m => Term -> StateT EvalState m ()
@@ -387,7 +386,6 @@ match rule = do
   es <- get
   let userStore = filter (not . view getDeleted) $ view getUserStore es
   let ruleHead = getRuleHead rule
-  let ruleBody = getRuleBody rule
   let ruleId = getRuleId rule
   let headSize = length ruleHead
   let constraintGroups = permute headSize userStore
