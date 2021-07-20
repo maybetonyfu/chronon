@@ -1,4 +1,4 @@
 import Chr hiding (main)
 
 main :: IO ()
-main = putStrLn $ "Hello " ++ author
+main = putStrLn ("Hello " ++ author)

@@ -1,2 +1,1 @@
 all: all(T) <=> eq(T, fun(fun(X1, bool), list(X1), bool))
-plus: plus(T), num(X1) <=> eq(T, fun(X1, X1, X1))

@@ -420,17 +420,15 @@ match rule = do
                 let vars = map (view getTerm . snd) pairs
                 mapM_ skolemise vars -- For some reason, we need to force a strict evaluation on skolemise
                 rs <- mapM (\(left, right) -> unify left (view getTerm right)) pairs
+                goal <- mapM derive (getRuleBody rule)
                 put es
-                newRule <- clone rule
-                goal <- mapM derive (getRuleBody newRule)
-                let newBuiltIn = zipWith (\ a b -> Fun "eq" [a, b]) matchedTerms (getRuleHead newRule)
                 if all isUnifySuccess rs
                   then
                     return $
                       Matched
                         { _matchedRule = rule,
                           _matchedConstraints = matchedConstraint,
-                          _newGoal = goal ++ newBuiltIn,
+                          _newGoal = goal,
                           _history = matchHistory
                         }
                   else return Unmatch
