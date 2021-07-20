@@ -206,37 +206,6 @@ addPropRule name heads body = do
   let numberOfRules = length $ view getRules es
   modify $ over getRules (++ [PropRule numberOfRules name heads body])
 
-substitute :: [(Term, Term)] -> Term -> Term
-substitute unifier t@(Var _) =
-  case find ((== t) . fst) unifier of
-    Just (_, toVar) -> toVar
-    Nothing -> t
-substitute unifier (Fun name ts) = Fun name (map (substitute unifier) ts)
-
-clone :: Monad m => Rule -> StateT EvalState m Rule
-clone (SimpRule ruleId name heads bodies) = do
-  let vars = nub . concatMap allVars $ (heads ++ bodies)
-  unifier <- mapM 
-    (\v -> do
-        es <- get 
-        let nextVarName = ('a':) . show . view getNextVar $  es
-        v' <- setVar nextVarName ["Simplified from rule id=" ++ show ruleId]; return (v, v') 
-      ) 
-      vars
-  return $ SimpRule ruleId name (map (substitute unifier) heads) (map (substitute unifier) bodies)
-  where allVars (Var x) = [Var x]
-        allVars (Fun _ ts) = concatMap allVars ts
-clone (PropRule ruleId name heads bodies) = do
-  let vars = nub . concatMap allVars $ (heads ++ bodies)
-  unifier <- mapM 
-    (\v -> do
-        v' <- setVar ("a" ++ show v) ["Simplified from rule id=" ++ show ruleId]; return (v, v') 
-      ) 
-      vars
-  return $ SimpRule ruleId name (map (substitute unifier) heads) (map (substitute unifier) bodies)
-  where allVars (Var x) = [Var x]
-        allVars (Fun _ ts) = concatMap allVars ts
-
 deref :: Monad m => Int -> StateT EvalState m (Maybe Term)
 deref n = do
   es <- get
@@ -273,6 +242,7 @@ unify (Var x) (Var y) =
       (Just f1@(Fun _ _), Just f2@(Fun _ _)) -> unify f1 f2
       (Just f@(Fun _ _), _) -> unify (Var y) f
       (_, Just f@(Fun _ _)) -> unify (Var x) f
+      (Nothing, Nothing) -> if x == y then return UnifyOK else modify (over getBuiltInStore (addEdge (Var x) (Var y))) >> return UnifyOK
       (_, _) -> modify (over getBuiltInStore (addEdge (Var x) (Var y))) >> return UnifyOK
 unify (Var x) f@(Fun _ _) =
   -- trace ("Unify var " ++ show x ++ " and fun " ++ show f) $
@@ -409,10 +379,9 @@ match rule = do
       <$> mapM
         ( \pairs -> do
             let matchedConstraint = map snd pairs
-            let matchedTerms = map (view getTerm) matchedConstraint
             let matchHistory = ruleId : map (view getId . snd) pairs
             let isHistorical = matchHistory `elem` view getMatchHistory es
-            -- this part reads: if all matching constraints for a PROPAGATION RULE are inactive, then it fails automatically
+            -- this line below reads: if all matching constraints for a PROPAGATION RULE are inactive, then it fails automatically
             -- if the matching combination has happened before, it fails automatically
             if ((not . any (view getActiveness)) matchedConstraint && isPropRule rule) || isHistorical
               then return Unmatch
@@ -490,7 +459,7 @@ type ChrState = StateT EvalState
 initState :: EvalState
 initState =
   EvalState
-    { _getNextVar = 100,
+    { _getNextVar = 0,
       _symbolMap = Map.empty,
       _getGoal = [],
       _getUserStore = [],
