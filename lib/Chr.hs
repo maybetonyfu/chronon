@@ -43,7 +43,7 @@ isCon (Fun _ []) = True
 isCon _ = False
 
 isFun :: Term -> Bool
-isFun (Fun _ (x : _)) = True
+isFun (Fun _ (_ : _)) = True
 isFun _ = False
 
 author :: String
@@ -194,6 +194,19 @@ setVar symbol comments = do
     Nothing -> registerVar symbol comments >> setVar symbol comments
     Just t -> return t
 
+free :: Rule -> [Term]
+free rule =
+      nub $ filter (`notElem` varsIn heads) (varsIn bodies)
+      where heads = getRuleHead rule
+            bodies = getRuleBody rule
+            varsIn [] = []
+            varsIn (Var x: ts) = Var x : varsIn ts
+            varsIn (Fun _ args: ts) = varsIn args ++ varsIn ts
+
+replaceFreeVar :: Monad m => [Term] -> Term -> StateT EvalState m Term
+replaceFreeVar freeVars t = do
+  return t
+
 addSimpRule :: Monad m => String -> Head -> Body -> StateT EvalState m ()
 addSimpRule name heads body = do
   es <- get
@@ -311,7 +324,7 @@ introduce term =
     let nextConstraintId = length (view getUserStore es)
     case find ((== term) . view getTerm) (view getUserStore es) of
       Nothing -> modify $ over getGoal (filter (/= term)) . over getUserStore ([UserConstraint term False True nextConstraintId] ++)
-      Just t -> modify $ over getGoal (filter (/= term))
+      Just _ -> modify $ over getGoal (filter (/= term))
 
 solve :: Monad m => Term -> StateT EvalState m UnifyResult
 solve t@(Fun _ [x, y]) =
@@ -387,17 +400,18 @@ match rule = do
               then return Unmatch
               else do
                 let vars = map (view getTerm . snd) pairs
-                mapM_ skolemise vars -- For some reason, we need to force a strict evaluation on skolemise
+                mapM_ skolemise vars
                 rs <- mapM (\(left, right) -> unify left (view getTerm right)) pairs
                 goal <- mapM derive (getRuleBody rule)
                 put es
                 if all isUnifySuccess rs
-                  then
+                  then do
+                    goal' <- mapM (replaceFreeVar (free rule)) goal
                     return $
                       Matched
                         { _matchedRule = rule,
                           _matchedConstraints = matchedConstraint,
-                          _newGoal = goal,
+                          _newGoal = goal',
                           _history = matchHistory
                         }
                   else return Unmatch
