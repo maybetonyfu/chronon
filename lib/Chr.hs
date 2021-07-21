@@ -5,12 +5,11 @@ module Chr where
 import Control.Lens
 import Control.Monad
 import Control.Monad.Trans.State.Lazy
-import qualified Data.IntMap as IM
 import qualified Data.Set as Set
--- import qualified Data.IntSet as IS
 import Data.List
+import Data.Maybe
 import qualified Data.Map as Map
-import Debug.Trace
+-- import Debug.Trace
 import Graph
 
 type Head = [Term]
@@ -203,9 +202,19 @@ free rule =
             varsIn (Var x: ts) = Var x : varsIn ts
             varsIn (Fun _ args: ts) = varsIn args ++ varsIn ts
 
-replaceFreeVar :: Monad m => [Term] -> Term -> StateT EvalState m Term
-replaceFreeVar freeVars t = do
-  return t
+replaceFreeVar :: Monad m => [Term] -> Goal -> StateT EvalState m Goal
+replaceFreeVar freeVars ts = do
+  freeToGrounded <- mapM (\v -> do
+            nextVar <- view getNextVar <$> get
+            let varName = 'a' : show nextVar
+            let varComment = "From rule variable " ++ show v
+            v' <- setVar varName [varComment]
+            return (v, v')
+           ) freeVars
+  return  $ substitute freeToGrounded ts
+  where substitute _ [] = []
+        substitute mp (v@(Var _) : gs) = fromMaybe v (lookup v mp):substitute mp gs
+        substitute mp ((Fun name args):gs) = Fun name (substitute mp args) : substitute mp gs
 
 addSimpRule :: Monad m => String -> Head -> Body -> StateT EvalState m ()
 addSimpRule name heads body = do
@@ -406,7 +415,7 @@ match rule = do
                 put es
                 if all isUnifySuccess rs
                   then do
-                    goal' <- mapM (replaceFreeVar (free rule)) goal
+                    goal' <- replaceFreeVar (free rule) goal
                     return $
                       Matched
                         { _matchedRule = rule,
