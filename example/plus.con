@@ -1,3 +1,4 @@
-plus(X)
+plus(A, B)
+eq(B, int) 
 num(int)
-num(float)
+eq(A, fun(B, B, B))

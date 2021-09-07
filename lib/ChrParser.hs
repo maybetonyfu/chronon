@@ -49,6 +49,12 @@ function = do
   void . lexeme $ char ')'
   return $ PFun fname terms
 
+comment :: Parser ()
+comment = do 
+  void . lexeme $ string "--"
+  void $ many anyChar 
+
+
 term :: Parser PTerm
 term = variable <|> try function <|> constant
 
@@ -73,11 +79,14 @@ simpRule = do
 rule :: Parser PRule
 rule = try propRule <|> simpRule
 
+newlineOrComment :: Parser ()
+newlineOrComment = void endOfLine <|> comment
+
 constraintProgram :: Parser [PTerm]
-constraintProgram = sepEndBy term (many1 endOfLine)
+constraintProgram = sepEndBy term (many1 newlineOrComment)
 
 chrProgram :: Parser [PRule]
-chrProgram = sepEndBy rule (many1 endOfLine)
+chrProgram = sepEndBy rule (many1 newlineOrComment)
 
 test :: IO ()
 test = do
