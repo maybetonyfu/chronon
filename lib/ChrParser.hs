@@ -1,7 +1,7 @@
 module ChrParser where
 
 import Chr hiding (main)
-import Control.Lens
+import Control.Lens hiding (noneOf)
 import Control.Monad.Trans.State.Lazy
 import qualified Data.IntMap as IM
 import qualified Data.Set as Set
@@ -52,8 +52,7 @@ function = do
 comment :: Parser ()
 comment = do 
   void . lexeme $ string "--"
-  void $ many anyChar 
-
+  void $ manyTill anyChar (try endOfLine)
 
 term :: Parser PTerm
 term = variable <|> try function <|> constant
@@ -80,13 +79,17 @@ rule :: Parser PRule
 rule = try propRule <|> simpRule
 
 newlineOrComment :: Parser ()
-newlineOrComment = void endOfLine <|> comment
+newlineOrComment = comment <|> void endOfLine
 
 constraintProgram :: Parser [PTerm]
-constraintProgram = sepEndBy term (many1 newlineOrComment)
+constraintProgram = do 
+  void $ many newlineOrComment 
+  sepEndBy term (many1 newlineOrComment)
 
 chrProgram :: Parser [PRule]
-chrProgram = sepEndBy rule (many1 newlineOrComment)
+chrProgram = do
+  void $ many newlineOrComment 
+  sepEndBy rule (many1 newlineOrComment)
 
 test :: IO ()
 test = do

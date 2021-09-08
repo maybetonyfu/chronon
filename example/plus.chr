@@ -1,3 +1,4 @@
-plus: plus(T, X), num(X) <=> eq(T, fun(X, X, X))
-
 -- hello
+plus: plus(T, X), num(X) <=> eq(T, fun(X, X, X))
+-- here is
+minus: minus(T, X), num(X) <=> eq(T, fun(X, X, X))

@@ -143,7 +143,6 @@ makeLenses ''EvalState
 
 inspectEvalState :: EvalState -> IO ()
 inspectEvalState es = do
-  print "Hello"
   let runLog = view getLog es
   mapM_ putStrLn runLog
   putStrLn "\n----- Symbol Map -----"
